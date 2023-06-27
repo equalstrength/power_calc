@@ -4,148 +4,188 @@ library(broom)
 library(purrr)
 library(plotly)
 library(MASS)
+library(shinythemes)
+library(shinyWidgets)
+library(bsplus)
+library(InteractionPoweR)
 
-# Define the UI
-ui <- fluidPage(
+
+# Define the UI ###############################################################
+
+# UI settings ===================================================
+
+ui <- fluidPage(theme = shinytheme("cerulean"),
+                tags$head(tags$style(HTML("hr {border-top: 1px solid #000000;}"))),
   titlePanel("EqualStrength Power Calculator"),
   sidebarLayout(
+# Side panel simulation settings =================================
     sidebarPanel(
-      sliderInput("callback",
-            "Baseline call-back rate",
-            min = 0.0,
-            max = 0.6,
-            step = 0.05,
-            value = 0.45,
-            round = FALSE),
-      sliderInput("maineffect",
-            "Main treatment effect (minority)",
-            min = -0.2,
-            max = 0.2,
-            step = 0.05,
-            value = -0.1),
-      sliderInput("othereffect",
-            "Other treatment effect",
-            min = -0.2,
-            max = 0.2,
-            step = 0.05,
-            value = 0),
-      sliderInput("interacteffect",
-            "Interaction effect",
-            min = -0.2,
-            max = 0.2,
-            step = 0.05,
-            value = 0.05),
-      numericInput('number_reps', 'Number of repetitions', 20, min = 1, max = 100),
-      actionButton("run_simulation", "Run simulation")
+      h4("Simulation settings"),
+      hr(),
+      fluidRow(
+        column(6, 
+               numericInput("NumberSim",
+                            "# of Simulations:",
+                            2000, min = 1, step = 1000, max = 10000)),
+        column(6, 
+               numericInput("Alpha",
+                            "Alpha:",
+                            0.050, min = 0.001, step = 0.01, max = 0.100))),
+      strong("Sample sizes"),
+      fluidRow(
+        column(6, 
+               numericInput("SampMin",
+                            "Min:",
+                            200, min = 1, step = 100, max = 2000)),
+        column(6, 
+               numericInput("SampMax",
+                            "Max:",
+                            2000, min = 500, step = 100, max = 14000))),
+# Side panel parameters =========================================
+      h4("Parameters"),
+      hr(),
+      sliderInput("CallBack",
+                  "Baseline call-back rate:",
+                  value = 0.35,
+                  min = 0.0, step = 0.05, max = 0.6,
+                  round = FALSE),
+      strong("Effect sizes"),
+      numericInput("MainEffect", 
+                  "Main treat. (X1):",
+                  -0.1,
+                  min = -2, step = 0.1, max = 2),
+      numericInput("SecondEffect",
+                  "Second treat. (X2):",
+                  -0.1,
+                  min = -2, step = 0.1, max = 2),
+      numericInput("InteractEffect",
+                  "Interaction:",
+                  -0.05,
+                  step = 0.1, min = -2, max = 2),
+# Side additional settings =========================================
+      materialSwitch(inputId = "Additional", label = "Additional settings", 
+                     value = FALSE, status = "primary"),
+        conditionalPanel(condition = "input.Additional == true",
+           numericInput("NumberSamp",
+                        "# of Samples:",
+                        50, min = 2, step = 10, max = 100)),
+    actionButton("run_simulation", "Run simulation")
     ),
+# Main panel  =====================================================
     mainPanel(
       tabsetPanel(type = "tabs",
-        tabPanel("Interaction", plotlyOutput("plot_interact")),
-        tabPanel("Treatment", plotlyOutput("plot_treat")),
-        tabPanel(
-          "About",
-          br(),
-          h4("What is this?"),
-          p("This app calculates the expected power based on simulations with different sample sizes"),
-          p("Power is estimated from the proportion of times in which the term was found significant (p < 0.05)"),
-          h4("Precision"),
-          p("The plot was generated after the following total number of simulations:"),
-          verbatimTextOutput("about"),
-          br(),
-          p("The estimates are based on the following pre-determined specifications:"),
-          p("- There are only two main treatment groups (ethnicity). For an additional group, we should expect a 33% larger sample for the same power"),
-          p("- The main treatment and control group are of the same size (50% and 50%)"),
-          br(),
-          h4("Credits"),
-          p("Code prepared by Edvard and adapted by the EqualStrength team ")
-          )
+        tabPanel("Instructions", htmltools::includeMarkdown("./Instructions.md")),
+        tabPanel("Interaction", 
+                 br(),
+                 p("The plot below shows the expected power for the", strong("interaction"), 
+                   "effect size indicated on the left according to each samples size"),
+                 p("To show the plot or refresh with new parameters, click on the button 
+                   'Run simulation' on the left"),
+                 plotlyOutput("plot_interact")),
+        tabPanel("Treatment", 
+                 br(),
+                 p("The plot below shows the expected power for the", strong("treatment"), 
+                   "effect size indicated on the left according to each samples size"),
+                 p("To show the plot or refresh with new parameters, click on the button 
+                   'Run simulation' on the left"),
+                 plotlyOutput("plot_treat")),
+        tabPanel("About", htmltools::includeMarkdown("./About.md"))
       )
     )
   )
 )
 
-# Define the server
+# Define the Server ########################################################
+
 server <- function(input, output) {
   observeEvent(input$run_simulation, {
-    # Read input values
-    in_base_cb <- input$callback
-    in_treat1 <- input$maineffect
-    in_treat2 <- input$othereffect
-    in_interact <- input$interacteffect
-    in_reps <- input$number_reps
 
-    # Create function to generate simulated data
-    sim.data <- function(n, base_cb, treat1, treat2, interact){
+
+# Read input values =====================================================
+    in_method <- input$Method
+    in_alpha <- input$Alpha
+    in_n_treats <- input$NumberTreat
+    in_base_cb <- input$CallBack
+    in_treat1 <- input$MainEffect
+    in_treat2 <- input$SecondEffect
+    in_treat3 <- input$ThirdEffect
+    in_int1 <-  input$IntEffect1
+    in_int2 <-  input$IntEffect2
+    in_int3 <-  input$IntEffect3
+    in_interact <- input$InteractEffect
+    in_n_samples <- input$NumberSamp
+    in_n_simul <- input$NumberSim
+
+  # Sample sizes to include in the simulations
+    range <- input$SampMax - input$SampMin
+    samp_sizes <- seq(input$SampMin, input$SampMax, round(range/in_n_samples))
+    in_reps <- in_n_simul/in_n_samples
+
+    # Function for simulation ===============================================
+    sim_data <- function(n, base_cb, treat1, treat2, interact){
       
-      # b) Create an empty dataset
-      dat <- data.frame(matrix(nrow = n, ncol = 0))
-      
-      # c) Create the two variables, and assign treatment distribution (probabilities) in last part
-      dat$minority <- sample(c(0, 1), nrow(dat), replace = TRUE, prob = c(0.5, 0.5))
-      dat$other_treat <- sample(c(0, 1), nrow(dat), replace = TRUE, prob = c(0.5, 0.5))
-      
-      # d) Create the outcome based on probabilities
+      # a) Create the two variables, and assign treatment distribution (probabilities) in last part
+      dat <- tibble(
+        minority = sample(c(0, 1), n, replace = TRUE, prob = c(0.5, 0.5)),
+        second_treat = sample(c(0, 1), n, replace = TRUE, prob = c(0.5, 0.5))
+      )
+
+      # b) Create the outcome based on probabilities
       dat$p <- base_cb +
         (treat1 * dat$minority) +
-        (treat2 * dat$other_treat) +
-        (interact * dat$minority * dat$other_treat)
-      
-      # e) To determine outcome: first create a random number between 0 and 1,
+        (treat2 * dat$second_treat) +
+        (interact * dat$minority * dat$second_treat)
+
+      # c) To determine outcome: first create a random number between 0 and 1,
       # then, if that number is above "p", we assign a callback ("1")
-      
       dat$random <- runif(nrow(dat), min = 0, max = 1)
       dat$outcome <- ifelse(dat$random < dat$p, 1, 0)
-      
-      # f) Estimate regression model, tidy it, and fix names/save result + parameters.
-      
-      m1 <- lm(outcome ~ minority * other_treat, data = dat)  |>
-        tidy() %>%
-        mutate(n = n,
-               baseline_cb = base_cb,
-               minority_effect = treat1,
-               other_treat_effect = treat2,
-               interaction_effect = interact,
-               significant = ifelse(.$p.value < 0.05, 1, 0))
-      
-      return(m1)
+
+      # d) Estimate regression model, tidy it, save output with sample size.
+      m1 <- lm(outcome ~ minority * second_treat, data = dat)  
+      m1_out <- tidy(m1) 
+      m1_out$n <- n
+
+      return(m1_out)
     }
 
     # Define the parameters data frame
     params <- data.frame(
       expand.grid(
-        n = seq(2000, 12000, 100),
+        n = samp_sizes,
         base_cb = in_base_cb,
         treat1 = in_treat1,
         treat2 = in_treat2,
-        interact = in_interact
-      )
+        interact = in_interact)
     )
 
     # Duplicate the parameters data frame
     df_duplicated <- replicate(in_reps, params, simplify = FALSE)
     df_param <- do.call(rbind, df_duplicated)
-
-    # Apply simulation on each row of the parameter data frame
-    df_result <- purrr::pmap_dfr(df_param, sim.data, .progress = TRUE)
-
-    # Group and summarize the results
-    df_grp_interact <- 
-      df_result  |>
-      filter(term == "minority:other_treat") |>
-      dplyr::select(n, baseline_cb, minority_effect, interaction_effect, significant)  |>
-      group_by(baseline_cb, minority_effect, interaction_effect, n)  |>
-      summarise(power = mean(significant), .groups = "drop")
     
-    df_grp_treat <- 
-      df_result  |>
-      filter(term %in% c("minority", "other_treat")) |>
-      dplyr::select(n, baseline_cb, minority_effect, interaction_effect, significant, term)  |>
-      group_by(baseline_cb, minority_effect, interaction_effect, n, term)  |>
-      summarise(power = mean(significant), .groups = "drop")
+    # Apply function to simulated data
+    df_result <- purrr::pmap_dfr(df_param, sim_data, .progress = TRUE)
     
+    # Renaming main interaction term
+    df_result$term <- if_else(df_result$term == "minority:second_treat", "interaction", df_result$term)
+
+    # Define significance
+    df_result$significant <- if_else(df_result$p.value < in_alpha, 1, 0)
+
+    # Group and summarise the results
+    df_grp <-
+      df_result  |>
+      filter(term %in% c("minority", "second_treat", "interaction")) |>
+      group_by(n, term)  |>
+      summarise(power = mean(significant), .groups = "drop")
+
+
     # Plot the results
     output$plot_interact <- renderPlotly({
-      p_int <- ggplot(data = df_grp_interact, aes(y = power, x = n)) +
+      p_int <- 
+        df_grp |> 
+        filter(term == "interaction") |> 
+        ggplot(aes(y = power, x = n)) +
         geom_point(color = "darkblue") +
         geom_hline(yintercept = 0.8, color = "red", linetype = 2) +
         geom_smooth(method = "loess") +
@@ -160,7 +200,10 @@ server <- function(input, output) {
     })
 
     output$plot_treat <- renderPlotly({
-      p_trt <- ggplot(data = df_grp_treat, aes(y = power, x = n)) +
+      p_trt <- 
+        df_grp |> 
+        filter(term != "interaction") |> 
+        ggplot(aes(y = power, x = n)) +
         geom_point(color = "darkblue") +
         geom_hline(yintercept = 0.8, color = "red", linetype = 2) +
         geom_smooth(method = "loess") +
@@ -173,11 +216,6 @@ server <- function(input, output) {
         theme_bw()
       
       print(p_trt)
-    })
-    # Information about number of repetitions
-
-    output$about <- renderText({
-      input$number_reps*nrow(params)
     })
   })
 }
