@@ -8,6 +8,8 @@ library(shinythemes)
 library(shinyWidgets)
 library(bsplus)
 library(InteractionPoweR)
+library(htmltools)
+
 
 
 # Define the UI ###############################################################
@@ -74,7 +76,7 @@ ui <- fluidPage(theme = shinytheme("cerulean"),
 # Main panel  =====================================================
     mainPanel(
       tabsetPanel(type = "tabs",
-        tabPanel("Instructions", htmltools::includeMarkdown("./Instructions.md")),
+  #      tabPanel("Instructions", htmltools::includeMarkdown("Instructions.md")),
         tabPanel("Interaction", 
                  br(),
                  p("The plot below shows the expected power for the", strong("interaction"), 
@@ -88,8 +90,8 @@ ui <- fluidPage(theme = shinytheme("cerulean"),
                    "effect size indicated on the left according to each samples size"),
                  p("To show the plot or refresh with new parameters, click on the button 
                    'Run simulation' on the left"),
-                 plotlyOutput("plot_treat")),
-        tabPanel("About", htmltools::includeMarkdown("./About.md"))
+                 plotlyOutput("plot_treat"))
+  #      tabPanel("About", htmltools::includeMarkdown("About.md"))
       )
     )
   )
