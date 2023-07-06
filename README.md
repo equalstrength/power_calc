@@ -1,7 +1,5 @@
 # Introduction
-This app shows the expected power based on simulations with different sample sizes
-for the EqualStrength project.
-
+This repository contains files used to calculate power for the EqualStrength project.
 
 # Credits
-Code prepared by Edvard and adapted by the EqualStrength team
+Code prepared by the EqualStrength team

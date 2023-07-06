@@ -1,0 +1,286 @@
+---
+title: "EqualStrength power analysis"
+title-block-banner: "#FFFFF"
+title-block-banner-color: "#27445C"
+format: 
+  html:
+    theme: cosmo
+    toc: true
+    toc-location: left
+    code-fold: true
+number-sections: true
+date-modified: "`r Sys.Date()`"
+execute:
+    echo: true
+    warning: false
+    message: false
+    cache: false
+bibliography: Power.bib
+csl: vancouver-brackets.csl
+css: style.css
+---
+
+
+## Introduction
+
+This analysis estimates the statistical power for EqualStrength tests across different sample sizes. Power is the probability of rejecting the null hypothesis when it is, in fact, false. In other words, the probability of correctly rejecting the hypothesis of *non-discrimination* when there is discrimination.  
+
+### Limitations
+
+As with any power analysis, the scope of this analysis is limited to the statistical significance of the test only. Apart from the general limitations of the NHST approach[@mcshane_abandon_2019], this analysis ignores the probability of the estimate being in the wrong direction or exaggerated [@gelman_beyond_2014].
+
+
+## Main parameters
+
+We estimate power as a function of a given i) sample size, ii) significance level, and iii) effect size. 
+
+```{r}
+in_alpha <- 0.05  # Threshold for significance level (Type I error prob.)
+in_sample <- seq(100, 6000, 50) #Sample sizes with min, max and increment
+```
+
+For the sample size, we use a sequence of different sizes varying from `r min(in_sample)` to `r max(in_sample)`. The significance level is determined by convention [@cohen_concepts_1977]: 
+
+- Alpha: `r in_alpha`.  
+
+The effect size can be specified either from previous studies or by assuming a "minimum effect that would be substantively important" [@gelman_beyond_2014].An overview of recent studies indicate a substantial variation of effect sizes depending on the setting and country[^1].  Several studies also highlight that any postulation of effect sizes based on previous studies is severely limited by publication bias, population effect size heterogeneity, and model error [@anderson_sample-size_2017]. Here we postulate the following callback rates for the main treatment: 
+
+```{r}
+in_cb_maj <- 0.4 # Callback rate for majority group
+in_cb_min <- 0.3 # Callback rate for minority group
+```
+
+- Majority group call-back rate: `r in_cb_maj`  
+- Minority group call-back rate: `r in_cb_min` 
+
+We then use these rates to estimate the effect size (expressed as Cohen's h[@cohen_concepts_1977]): 
+
+```{r}
+# Effect size (ES) for main treatment using Cohen's h formula
+in_es_main <- 2 * asin(sqrt(in_cb_min)) -  2 * asin(sqrt(in_cb_maj))
+```
+
+- Effect size of the main treatment: `r round(in_es_main, 2)`. 
+
+
+
+### Simple estimate (PWR) {#sec-pwr}
+
+Based on these parameters, it is possible to estimate power assuming a basic design with two groups of the same size. The package pwr [@champely_pwr_2017] contains functions based on the formulas developed by Jacob Cohen[@cohen_concepts_1977] to calculate power. The following estimates are based on a power calculation for two proportions (with same sample sizes). 
+
+```{r}
+library(tidyverse) # data manipulation
+library(plotly) # extra info for plots
+library(pwr) # power analysis
+
+# The function requires the number of observations per sample (per group), as we are comparing
+# two groups, the in_sample (total sample) is divided by two. 
+tb_out <- 
+  pwr.2p.test(
+    h = in_es_main, # cohen's h
+    n = in_sample/2, # sample size for each group
+    sig.level = in_alpha, # significance level 
+    power = NULL)
+
+tb_pwr <- data.frame(n = in_sample, power = tb_out$power)
+
+# plotting the results
+plot_pwr <- 
+  tb_pwr |>
+    ggplot(aes(x= n, y = power))+
+    geom_point(color = '#27445C')+ 
+    theme_minimal() 
+
+ggplotly(plot_pwr)
+
+```
+
+
+[^1]: Mention Ely's work here
+
+
+## Specific parameters 
+
+Here we use three different approaches to incorporate specific features from the EqualStrength research design. First we incorporate a second treatment and an interaction term between the two treatments. 
+
+```{r}
+# Second treatment effect size (same as main )
+in_es_sec <- in_es_main
+
+# Interaction effect size (25% and 50% the size of the main effect)
+in_es_interact <- c(round(0.25 * in_es_main, 2), round(0.5 * in_es_main, 2)) * -1
+```
+
+The effect size of the second treatment is postulated to be the same as the one of the main treatment (`r round(in_es_main, 2)`). The interaction effect size is assigned as 25% or 50% the effect size of the main treatment, which results in the following values:
+
+- Interaction effect size (lower): `r in_es_interact[1]`. 
+- Interaction effect size (higher): `r in_es_interact[2]`. 
+
+
+### Gelman, Hill, and Vehtari (GHV)
+
+In GHV[@gelman_regression_2020], the authors highlight that it is necessary "4 times the sample size to estimate an interaction that is the same size as the
+main effect" and estimate a 16 times larger sample for an interaction half the size of the main effect. Using the previous estimates from @sec-pwr and a power >80%, we would get a sample size of `r format(4 * min(tb_pwr |> filter(power>=0.8) |> select(n)), big.mark=",")` for an interaction effect as large as the main effect and about `r format(16 * min(tb_pwr |> filter(power>=0.8) |> select(n)), big.mark=",")` for an effect half the size.
+
+### Package InteractionPoweR (IPR)
+
+Using the package InteractionPoweR (IPR)[@baranger_tutorial_2022] we can use the interaction effect size as a parameter for simulations.[^2] It is assumed that the treatment variables are not correlated but this can be changed in the  *r.x1.x2* argument of the function. 
+
+```{r}
+library(InteractionPoweR) # power analysis
+library(plotly) # interactive plot
+
+
+# Running the simulations
+tb_ipr <-
+  power_interaction(
+      n.iter = 1000,         # n of simulations per unique combination of input parameters
+      alpha = in_alpha,   # alpha, for the power analysis
+      N = in_sample,           # sample size
+      r.x1x2.y = in_es_interact,   # interaction effect to test (correlation between x1*x2 and y)
+      r.x1.y = in_es_main,  # correlation between x1 and y
+      r.x2.y = in_es_sec,  # correlation between x2 and y  
+      r.x1.x2 = 0,           # correlation between x1 and x2 
+      k.y =  2,              # y is binary
+      k.x1 = 2,              # x1 has two categories (majority, minority)
+      k.x2 = 2,              # x2 has two categories (gender)
+      cl = 6                 # number of clusters to run parallel  simulations (performance)
+    )
+
+names(tb_ipr) <- c("Interaction_ES", "n", "power") #rename columns
+
+# Plotting the results
+plot_ipr <- 
+  tb_ipr |>
+    mutate(Interaction_ES = factor(Interaction_ES)) |>
+    ggplot(aes(x = n, y = power, color = Interaction_ES))+
+    geom_point() +
+    geom_smooth(method = "loess") +
+    geom_hline(yintercept = 0.8, color = "black", linetype = 2) +
+    scale_color_manual(values=c("#F77F00", "#27445C")) +
+    labs(title = "Power of the interaction term for different sample sizes and effect sizes (IPR)")+
+    theme_minimal()
+
+ggplotly(plot_ipr)
+
+```
+
+[^2]: The developers indicate that they would like to include 3-way interactions in a future version, but emphasise that "[There are several steps in the analysis where we do not know exactly what to do for 3-way interactions](https://dbaranger.github.io/InteractionPoweR/articles/CommonQuestions.html)".
+
+### Edvard N. Larsen (ENL)
+
+Using the R code shared by Edvard Nergård Larsen, it is possible to calculate the power with additional parameters. The estimates result from linear models [@gomila_logistic_2021] built from simulated datasets that incorporate different combinations of parameters. 
+
+Here we also get estimates for main treatments using one, two or three minority groups in addition to the majority group.  For that, we assume that having an additional minority group results in a 33% larger sample to get the same power. Similarly, we assume a 50% larger sample to have three minority groups.
+
+```{r}
+
+library(purrr)
+library(broom)
+
+
+# Function for simulation ===============================================
+sim_data <- function(n, base_cb, treat1, treat2, interact){
+  
+  # a) Create the two variables, and assign treatment distribution (probabilities) in last part
+  dat <- tibble(
+    minority = sample(c(0, 1), n, replace = TRUE, prob = c(0.5, 0.5)),
+    second_treat = sample(c(0, 1), n, replace = TRUE, prob = c(0.5, 0.5))
+  )
+
+  # b) Create the outcome based on probabilities
+  dat$p <- base_cb +
+    (treat1 * dat$minority) +
+    (treat2 * dat$second_treat) +
+    (interact * dat$minority * dat$second_treat)
+
+  # c) To determine outcome: first create a random number between 0 and 1,
+  # then, if that number is above "p", we assign a callback ("1")
+  dat$random <- runif(nrow(dat), min = 0, max = 1)
+  dat$outcome <- ifelse(dat$random < dat$p, 1, 0)
+
+  # d) Estimate regression model, tidy it, save output with sample size.
+  m1 <- lm(outcome ~ minority * second_treat,  data = dat)  
+  m1_out <- tidy(m1) 
+  m1_out$n <- n
+  m1_out$interact <- interact
+
+  return(m1_out)
+}
+
+# Creating data frame with simulated data ===================================
+tb_params <- data.frame(
+  expand.grid(
+    n = in_sample,
+    base_cb = in_cb_maj,
+    treat1 = in_es_main,
+    treat2 = in_es_sec,
+    interact = in_es_interact)
+)
+
+tb_duplicated <- replicate(100, tb_params, simplify = FALSE)
+tb_final <- do.call(rbind, tb_duplicated)
+
+# Apply function to simulated data =======================================
+tb_result <- purrr::pmap_dfr(tb_final, sim_data, .progress = TRUE)
+
+# Define significance ===================================================
+tb_result$significant <- if_else(tb_result$p.value < in_alpha, 1, 0)
+
+# Group and summarise the results =======================================
+tb_summary <-
+  tb_result  |>
+  filter(term == "minority:second_treat") |>
+  group_by(n, interact)  |>
+  summarise(power = mean(significant), .groups = "drop") |>
+  mutate(Groups = "2 groups (1 minority)")
+
+
+# Adding estimates for two and three minority groups ====================
+# Following ENLs advice we assume that to have an additional minority group
+# we should have a 33% larger sample to get the same power.
+# We also add a 50% larger sample to have three minority groups
+
+tb_grps <-
+  tb_summary |>
+    bind_rows(tb_summary |> 
+                mutate(Groups = "3 groups (2 minorities)",
+                        n = n + (n/3))) |>
+    bind_rows(tb_summary |> 
+                mutate(Groups = "4 groups (3 minorities)",
+                        n = n + (n/2)))
+
+# keeping sample size range from the parameters
+tb_grps <- tb_grps |> filter(n <= max(in_sample)+1)
+
+# Plot the estimates =================================================
+plot_enl <- 
+  tb_grps |>
+    mutate(Interaction_ES = factor(interact)) |>
+    ggplot(aes(x = n, y = power, color = Interaction_ES))+
+    geom_point() +
+    geom_smooth(method = "loess") +
+    geom_hline(yintercept = 0.8, color = "black", linetype = 2) +
+    scale_color_manual(values=c("#F77F00", "#27445C")) +
+    facet_wrap(~Groups, ncol = 3) +
+    theme_minimal()
+
+ggplotly(plot_enl)
+
+
+```
+
+
+It is possible to change the parameters for these simulations using [this Shiny app](https://danielucd.shinyapps.io/PowerCalc/):
+
+[![](shinyapp.png)](https://danielucd.shinyapps.io/PowerCalc/)
+
+
+## Summary 
+
+
+
+## References
+
+
+

@@ -16,7 +16,7 @@ library(htmltools)
 
 # UI settings ===================================================
 
-ui <- fluidPage(theme = shinytheme("cerulean"),
+ui <- fluidPage(theme = shinytheme("cosmo"),
                 tags$head(tags$style(HTML("hr {border-top: 1px solid #000000;}"))),
   titlePanel("EqualStrength Power Calculator"),
   sidebarLayout(
@@ -48,21 +48,21 @@ ui <- fluidPage(theme = shinytheme("cerulean"),
       hr(),
       sliderInput("CallBack",
                   "Baseline call-back rate:",
-                  value = 0.35,
+                  value = 0.4,
                   min = 0.0, step = 0.05, max = 0.6,
                   round = FALSE),
       strong("Effect sizes"),
       numericInput("MainEffect", 
                   "Main treat. (X1):",
-                  -0.1,
+                  -0.2,
                   min = -2, step = 0.1, max = 2),
       numericInput("SecondEffect",
                   "Second treat. (X2):",
-                  -0.1,
+                  -0.2,
                   min = -2, step = 0.1, max = 2),
       numericInput("InteractEffect",
                   "Interaction:",
-                  -0.05,
+                  0.1,
                   step = 0.1, min = -2, max = 2),
 # Side additional settings =========================================
       materialSwitch(inputId = "Additional", label = "Additional settings", 
@@ -76,7 +76,6 @@ ui <- fluidPage(theme = shinytheme("cerulean"),
 # Main panel  =====================================================
     mainPanel(
       tabsetPanel(type = "tabs",
-  #      tabPanel("Instructions", htmltools::includeMarkdown("Instructions.md")),
         tabPanel("Interaction", 
                  br(),
                  p("The plot below shows the expected power for the", strong("interaction"), 
@@ -91,7 +90,6 @@ ui <- fluidPage(theme = shinytheme("cerulean"),
                  p("To show the plot or refresh with new parameters, click on the button 
                    'Run simulation' on the left"),
                  plotlyOutput("plot_treat"))
-  #      tabPanel("About", htmltools::includeMarkdown("About.md"))
       )
     )
   )
@@ -110,10 +108,6 @@ server <- function(input, output) {
     in_base_cb <- input$CallBack
     in_treat1 <- input$MainEffect
     in_treat2 <- input$SecondEffect
-    in_treat3 <- input$ThirdEffect
-    in_int1 <-  input$IntEffect1
-    in_int2 <-  input$IntEffect2
-    in_int3 <-  input$IntEffect3
     in_interact <- input$InteractEffect
     in_n_samples <- input$NumberSamp
     in_n_simul <- input$NumberSim
@@ -168,27 +162,25 @@ server <- function(input, output) {
     # Apply function to simulated data
     df_result <- purrr::pmap_dfr(df_param, sim_data, .progress = TRUE)
     
-    # Renaming main interaction term
-    df_result$term <- if_else(df_result$term == "minority:second_treat", "interaction", df_result$term)
-
     # Define significance
     df_result$significant <- if_else(df_result$p.value < in_alpha, 1, 0)
 
     # Group and summarise the results
     df_grp <-
       df_result  |>
-      filter(term %in% c("minority", "second_treat", "interaction")) |>
+      filter(term %in% c("minority", "second_treat", "minority:second_treat")) |>
       group_by(n, term)  |>
-      summarise(power = mean(significant), .groups = "drop")
+      summarise(power = mean(significant), .groups = "drop") |> 
+      mutate(n = n + (n/3)) # 33% larger sample for three ethnic groups
 
 
     # Plot the results
     output$plot_interact <- renderPlotly({
       p_int <- 
         df_grp |> 
-        filter(term == "interaction") |> 
+        filter(term == "minority:second_treat") |> 
         ggplot(aes(y = power, x = n)) +
-        geom_point(color = "darkblue") +
+        geom_point(color = "#2C3E50") +
         geom_hline(yintercept = 0.8, color = "red", linetype = 2) +
         geom_smooth(method = "loess") +
         labs(
@@ -204,9 +196,9 @@ server <- function(input, output) {
     output$plot_treat <- renderPlotly({
       p_trt <- 
         df_grp |> 
-        filter(term != "interaction") |> 
+        filter(term != "minority:second_treat") |> 
         ggplot(aes(y = power, x = n)) +
-        geom_point(color = "darkblue") +
+        geom_point(color = "#2C3E50") +
         geom_hline(yintercept = 0.8, color = "red", linetype = 2) +
         geom_smooth(method = "loess") +
         labs(

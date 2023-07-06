@@ -1,0 +1,9 @@
+.quarto-title-block .quarto-title-banner {
+    background-image: url(eslogo.png);
+    background-size: 100px;
+    background-position: left;
+    background-repeat: no-repeat;
+    padding-left: 50px;
+    background-origin: content-box;
+  }
+  
