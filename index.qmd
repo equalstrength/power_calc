@@ -122,7 +122,7 @@ In GHV[@gelman_regression_2020], the authors highlight that it is necessary "4 t
 
 ### Package InteractionPoweR (IPR)
 
-Using the package InteractionPoweR (IPR)[@baranger_tutorial_2022] we can use the interaction effect size as a parameter for simulations.[^2] It is assumed that the treatment variables are not correlated but this can be changed in the  *r.x1.x2* argument of the function. 
+Using the package InteractionPoweR (IPR)[@baranger_tutorial_2022] we can use the interaction effect size as a parameter for simulations. It is assumed that the treatment variables are not correlated but this can be changed in the  *r.x1.x2* argument of the function. 
 
 ```{r}
 library(InteractionPoweR) # power analysis
@@ -163,7 +163,7 @@ ggplotly(plot_ipr)
 
 ```
 
-[^2]: The developers indicate that they would like to include 3-way interactions in a future version, but emphasise that "[There are several steps in the analysis where we do not know exactly what to do for 3-way interactions](https://dbaranger.github.io/InteractionPoweR/articles/CommonQuestions.html)".
+
 
 ### Edvard N. Larsen (ENL)
 
@@ -185,15 +185,16 @@ sim_data <- function(n, base_cb, ngroups, treat1, treat2, interact){
   
   # a) Create the two variables, and assign treatment distribution (probabilities) in last part
   dat <- tibble(
-    minority = sample(c(0, rep(1, (ngroups-1))), n, replace = TRUE, prob = c(rep(1/ngroups, ngroups))),
+    minority = sample(c('maj', paste0('min', 1:(ngroups-1))), n, 
+                      replace = TRUE, prob = c(rep(1/ngroups, ngroups))),
     second_treat = sample(c(0, 1), n, replace = TRUE, prob = c(0.5, 0.5))
   )
 
   # b) Create the outcome based on probabilities
   dat$p <- base_cb +
-    (treat1 * dat$minority) +
+    (treat1 * (dat$minority != 'maj')) +
     (treat2 * dat$second_treat) +
-    (interact * dat$minority * dat$second_treat)
+    (interact * (dat$minority != 'maj') * dat$second_treat)
 
   # c) To determine outcome: first create a random number between 0 and 1,
   # then, if that number is above "p", we assign a callback ("1")
@@ -242,7 +243,7 @@ tb_result$significant <- if_else(tb_result$p.value < in_alpha, 1, 0)
 # Group and summarise the results =======================================
 tb_summary <-
   tb_result  |>
-  filter(term == "minority:second_treat") |>
+  filter(str_detect(term, ':')) |> # only interaction terms
   group_by(n, ngroups, interact)  |>
   summarise(power = mean(significant), .groups = "drop") |>
   mutate(Groups = paste0(ngroups, " groups (", ngroups -1, " minorities)"))
@@ -278,21 +279,35 @@ It is possible to change the parameters for these simulations using [this Shiny 
 
 - Following this method, we estimate that at least `r keypoint <- tb_summary |> filter (ngroups == 3 & power >= 0.8 & interact == max(in_es_interact)) ; format(min(keypoint$n), big.mark=",")` observations equally distributed across 3 ethnic groups are necessary to get >= 80% power with a main effect size of `r round(in_es_main, 2)` and an interaction effect size of `r max(in_es_interact)`.
 
-- After trying different parameters in the shiny app, the most influential component for the sample size seems to be the effect size of the interaction term: 
+- There is a large variation of sample sizes depending on the parameters postulated:
 
-| Maj. call-back | Main treat. | Interaction | Min. sample 80%|
-|--------| ------- | ------- | ------------|
-| 0.3 | -0.3 | 0.075 |  600 |
-| 0.3 | -0.3 | 0.15 |  600 |
-| 0.3 |  -0.1 | 0.025 | 17,600 |
-| 0.3 | -0.1 | 0.05 |  5,600 |
-| 0.4 | -0.3 | 0.075 | 2,600 |
-| 0.4 | -0.3 | 0.15 |  1,100 |
-| 0.4 | -0.1 | 0.05 |  10,100 |
-| 0.5 | -0.3 | 0.075 |  3,100 |
-| 0.5 | -0.3 | 0.15 | 11,00 |
-| 0.5 | -0.1 | 0.05 | 12,600 |
+| Baseline<br/>call-back| Main <br/> treatment | Second <br/> treatment| Interaction| Min. sample<br/>(80% power)|
+|-------:|------:|------:|--------:|:----------|
+|     0.3|   -0.3|  -0.30|    0.150|100        |
+|     0.3|   -0.3|  -0.30|    0.075|300        |
+|     0.3|   -0.3|  -0.15|    0.075|700        |
+|     0.3|   -0.3|  -0.15|    0.150|700        |
+|     0.5|   -0.3|  -0.30|    0.150|1,300      |
+|     0.5|   -0.3|  -0.15|    0.150|1,500      |
+|     0.5|   -0.3|  -0.30|    0.075|2,500      |
+|     0.5|   -0.3|  -0.15|    0.075|5,900      |
+|     0.3|   -0.1|  -0.05|    0.050|11,100     |
+|     0.3|   -0.1|  -0.10|    0.050|11,700     |
+|     0.5|   -0.1|  -0.05|    0.050|15,300     |
+|     0.5|   -0.1|  -0.10|    0.050|15,900     |
 
+## Next steps
+
+1) Decide on the effect size of the interaction term based on previous studies or on what is "substantively important"[@gelman_beyond_2014]/interesting[@lakens_sample_2022].
+
+2) Decide if we should try to generate estimates based on three-way interactions [^2].
+
+3) Discuss feasibility at the country level considering resources available for data collection, expected effect size, as well as the number of new positions available for employment, accommodation, and childcare. 
+
+4) Decide on additional treatment groups for each country considering that each additional group would require a 33% larger sample.  
+
+
+[^2]: The developers of the package InteractionPoweR indicate that they would like to include 3-way interactions in a future version, but emphasise that "[There are several steps in the analysis where we do not know exactly what to do for 3-way interactions](https://dbaranger.github.io/InteractionPoweR/articles/CommonQuestions.html)".
 
 ## References
 
