@@ -1,23 +1,17 @@
 ---
 title: "Note on EqualStrength power analysis"
-title-block-banner: "#FFFFF"
-title-block-banner-color: "#27445C"
-format: 
-  html:
-    theme: cosmo
-    toc: true
-    toc-location: left
-    code-fold: true
+format:
+  docx:
+    reference-doc: es_template.docx
+toc: false
 number-sections: true
 date-modified: "`r Sys.Date()`"
 execute:
-    echo: true
+    echo: false
     warning: false
     message: false
-    cache: false
+    cache: true
 bibliography: Power.bib
-csl: vancouver-brackets.csl
-css: style.css
 ---
 
 ```{r}
